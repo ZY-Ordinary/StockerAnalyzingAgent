@@ -1,0 +1,14 @@
+{
+    "mcpServers": {
+      "fetch_sina_news_server": {
+        "command": "python",
+        "args": ["FetchSinaNewsDataMCP.py"],
+        "transport": "stdio"
+      },
+      "fetch_stocker_data_server": {
+        "command": "python",
+        "args": ["FetchStockerDataMCP.py"],
+        "transport": "stdio"
+      }
+    }
+  }
