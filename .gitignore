@@ -5,6 +5,7 @@ Thumbs.db
 
 # 忽略日志文件
 *.log
+*.txt
 
 # 忽略敏感文件（密码、密钥等）
 secrets/
@@ -21,3 +22,8 @@ config.json  # 包含敏感信息的配置文件
 .idea/
 *.swp
 *.swo
+
+# 忽略生成result文件
+result/
+*.md
+
