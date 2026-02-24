@@ -1,4 +1,5 @@
 from FetchSinaNewsDataMCP import NewsDataCollector
+from FetchPaperNewsDataMCP import PaperNewsDataCollector
 import json
 import logging
 import asyncio
@@ -11,7 +12,8 @@ logging.basicConfig(
 )
 
 async def test_fetch_news():
-    collector = NewsDataCollector()
+    #collector = NewsDataCollector()
+    collector = PaperNewsDataCollector()
     
     # 测试用例1: 搜索公司新闻
     print("测试1: 搜索工商银行相关新闻")

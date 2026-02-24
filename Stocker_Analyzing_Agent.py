@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2023-2024 @ CAMEL-AI.org. All Rights Reserved. =========
 
-
 # To run this file, you need to configure the DeepSeek API key
 # You can obtain your API key from DeepSeek platform: https://platform.deepseek.com/api_keys
 # Set it as DEEPSEEK_API_KEY="your-api-key" in your .env file or add it to your environment variables
@@ -43,12 +42,19 @@ import functools
 import os
 from datetime import datetime
 
+# 导入logger_utils中的全局日志函数
+from logger_utils import log_global_info, log_global_debug, log_global_warning, log_global_error, log_global_critical
+
+# 开关：控制是否保存chat_history到文件
+SAVE_CHAT_HISTORY_TO_FILE = True  # 设置为False可以禁用此功能
+
 #set_log_level(level="DEBUG")
 set_log_level(level="INFO")
 
 base_dir = pathlib.Path(__file__).parent.parent
 env_path = base_dir / "owl" / ".env"
 load_dotenv(dotenv_path=str(env_path))
+
 
 
 async def construct_society(question: str, tools: list[FunctionTool]) -> OwlRolePlaying:
@@ -107,28 +113,65 @@ async def construct_society(question: str, tools: list[FunctionTool]) -> OwlRole
     return society
 
 
-async def main():
-    r"""Main function to run the OWL system with an example question."""
-    # Example research question
-    #company = '云赛智联'
-    #industry = 'AI算力'
-    #company = '浪潮软件'
-    #industry = '软件信息' 
-    company = '工商银行'
-    industry = '金融财政'   
-    #company = '农业银行'
-    #industry = '金融财政' 
-    #company = '中芯国际'
-    #industry = '芯片制造'   
-    #default_task = f"搜索今天关于{company}以及相关{industry}新闻，根据新闻内容分析市场关于{company}未来股票走势的情绪，并结合近一个月{company}股票走势预测明天{company}股票走势,仅需要搜索一次新闻和股票信息就可以，不需要尝试反复搜索以求验证结果。分析预测完成整理成一份专业的股票分析报告"
+def save_chat_history_to_md(chat_history, company_name):
+    """
+    将chat_history保存为markdown格式的文件
+    :param chat_history: 聊天历史记录
+    :param company_name: 公司名称
+    """
+    try:
+        # 确保文件名安全 - 移除或替换非法字符
+        safe_company_name = "".join(c for c in company_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        
+        # 创建result目录（如果不存在）
+        result_dir = pathlib.Path(__file__).parent / "result"
+        result_dir.mkdir(exist_ok=True)
+        
+        # 生成文件名，包含公司名称和时间戳
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"chat_history_{safe_company_name}_{timestamp}.md"
+        filepath = result_dir / filename
+        
+        # 写入markdown文件
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(f"# Chat History for {company_name}\n\n")
+            f.write(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            
+            # for idx, message in enumerate(chat_history):
+            #     role = message.get("role", "Unknown")
+            #     content = message.get("content", "")
+                
+            #     # 根据角色设置标题
+            #     if role.lower() == "user":
+            #         f.write(f"## 用户提问 {idx+1}:\n{content}\n\n")
+            #     elif role.lower() == "assistant":
+            #         f.write(f"## AI回复 {idx+1}:\n{content}\n\n")
+            #     elif role.lower() == "system":
+            #         f.write(f"## 系统提示 {idx+1}:\n{content}\n\n")
+            #     else:
+            #         f.write(f"## {role} {idx+1}:\n{content}\n\n")
+            f.write(f"{chat_history}\n\n")
+        log_global_info(f"聊天历史已保存到: {filepath}")
+        
+    except Exception as e:
+        log_global_error(f"保存聊天历史时发生错误: {str(e)}")
 
+
+async def main(company, industry):
+    r"""Main function to run the OWL system with an example question."""
+
+    log_global_info(f"开始执行 {company} ({industry}) 的股票分析任务")
+    
     #检查是否有名为'result'的文件夹，如没有则创建
     result_dir = pathlib.Path(__file__).parent / "result"
     result_dir.mkdir(exist_ok=True)
+    log_global_debug(f"确保结果目录存在: {result_dir}")
 
     today = datetime.now().strftime("%Y-%m-%d")
     today_dir = result_dir / today
     today_dir.mkdir(exist_ok=True)
+    log_global_debug(f"确保当天目录存在: {today_dir}")
+    
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{company}_{industry}_{current_time}.md"
 
@@ -155,49 +198,44 @@ async def main():
             若信息不足或存在矛盾，明确说明局限性。
     最终报告保存在./result/{today}文件夹下，文件名为{filename}'''
 
-    # Override default task if command line argument is provided
-    task = sys.argv[1] if len(sys.argv) > 1 else default_task
+    task = default_task
 
     # Add MCP server
     mcp_toolkit = MCPToolkit(config_path="config/Fetch.json")
+    log_global_debug("MCP Toolkit初始化完成")
 
     try:
         # Connect to all configured MCP servers
-        print ("Connect to MCP server...")
+        log_global_info("开始连接MCP服务器...")
         await mcp_toolkit.connect()
-        print ("Connect to MCP server successfully")
+        log_global_info("MCP服务器连接成功")
 
-        tools = [*mcp_toolkit.get_tools()]
-        tools.append(*FileWriteToolkit(output_dir="./").get_tools())
+        # Get tools from MCP toolkit and add FileWriteToolkit
+        mcp_tools = mcp_toolkit.get_tools()  # 直接使用返回的工具列表
+        file_tools = FileWriteToolkit(output_dir="./").get_tools()
+        
+        # 合并工具列表
+        tools = mcp_tools + file_tools
+        log_global_debug(f"加载了 {len(tools)} 个工具")
 
         # Construct and run the society
+        log_global_info("开始构建智能体社会...")
         society = await construct_society(task, tools)
+        log_global_info("智能体社会构建完成")
 
+        log_global_info("开始运行智能体社会...")
         answer, chat_history, token_count = await arun_society(society)
+        log_global_info("智能体社会运行完成")
 
-        # Output the result
-        print(f"\033[94mAnswer: {answer}\033[0m")
-        #print ('正在运行OWL系统...')
+        # 如果开关打开，则保存chat_history到文件
+        if SAVE_CHAT_HISTORY_TO_FILE:
+            save_chat_history_to_md(chat_history, company)
+
+        log_global_info(answer)
         
-        # 保存结果到文件
-        # 1. 检查是否有名为'result'的文件夹，如没有则创建
-        # result_dir = pathlib.Path(__file__).parent / "result"
-        # result_dir.mkdir(exist_ok=True)
-        
-        # # 2. 在'result'文件夹下创建以今天日期命名的文件夹
-        # today = datetime.now().strftime("%Y-%m-%d")
-        # today_dir = result_dir / today
-        # today_dir.mkdir(exist_ok=True)
-        
-        # # 3. 将结果保存到文件
-        # current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # filename = f"{company}_{industry}_{current_time}.txt"
-        # result_file = today_dir / filename
-        
-        # with open(result_file, 'w', encoding='utf-8') as f:
-        #     f.write(answer)
-        
-        #print(f"结果已保存到: {result_file}")
+    except Exception as e:
+        log_global_error(f"执行股票分析任务时发生错误: {str(e)}")
+        raise
         
     finally:
         # Make sure to disconnect safely after all operations are completed.
@@ -207,19 +245,59 @@ async def main():
                 # 使用更安全的方式断开连接，避免取消作用域问题
                 try:
                     # 创建一个新的任务来处理断开连接
+                    log_global_debug("开始断开MCP toolkit连接...")
                     disconnect_task = asyncio.create_task(mcp_toolkit.disconnect())
                     # 等待断开连接完成，但使用更安全的超时处理
                     await asyncio.wait_for(disconnect_task, timeout=5.0)
+                    log_global_info("MCP toolkit断开连接成功")
                 except asyncio.TimeoutError:
-                    print("Warning: MCP toolkit disconnect timed out")
+                    log_global_warning("MCP toolkit断开连接超时")
                 except asyncio.CancelledError:
-                    print("Warning: MCP toolkit disconnect was cancelled")
+                    log_global_warning("MCP toolkit断开连接被取消")
                 except Exception as e:
-                    print(f"Disconnect failed: {e}")
+                    log_global_error(f"MCP toolkit断开连接失败: {e}")
         except Exception as e:
-            print(f"Error during disconnect cleanup: {e}")
+            log_global_error(f"断开连接清理过程中发生错误: {e}")
+
+    log_global_info(f"完成 {company} ({industry}) 的股票分析任务")
 
 
 if __name__ == "__main__":
+    log_global_info("启动股票分析代理系统")
+
+    # 定义公司和行业列表
+    companies_and_industries = [
+       {"company": "云赛智联", "industry": "AI算力"},
+       # {"company": "浪潮软件", "industry": "软件信息"},
+       {"company": "工商银行", "industry": "金融财政"},
+       #{"company": "农业银行", "industry": "金融财政"},
+       {"company": "中芯国际", "industry": "芯片制造"},
+       {"company": "上海电气", "industry": "电力"},
+       {"company": "药明康德", "industry": "医药行业"},
+       {"company": "中国核电", "industry": "电力行业"}
+    ]
     
-    asyncio.run(main())
+    log_global_info(f"开始批量处理 {len(companies_and_industries)} 个公司的股票分析任务")
+    
+    # 遍历公司和行业列表，逐个进行分析
+    for idx, item in enumerate(companies_and_industries, 1):
+        company = item["company"]
+        industry = item["industry"]
+        
+        log_global_info(f"[{idx}/{len(companies_and_industries)}] 开始分析 {company} ({industry}) 的股票...")
+        
+        try:
+            # 为每个公司调用main函数
+            asyncio.run(main(company=company, industry=industry))
+            log_global_info(f"[{idx}/{len(companies_and_industries)}] 完成分析 {company} ({industry}) 的股票")
+            
+            # 添加延迟以避免请求过于频繁
+            import time
+            log_global_debug(f"等待5秒后处理下一个公司...")
+            time.sleep(5)  # 等待5秒再处理下一个公司
+            
+        except Exception as e:
+            log_global_error(f"分析 {company} ({industry}) 时发生错误: {e}")
+            continue  # 继续处理下一个公司
+    
+    log_global_info("所有公司的股票分析任务已完成")

@@ -10,32 +10,14 @@ import logging
 import os
 from mcp.server.fastmcp import FastMCP
 
+# Import global logger functions
+from logger_utils import log_global_info, log_global_debug, log_global_warning, log_global_error
+
 # Create MCP server
 app = FastMCP("stock-data-fetcher")
 
-# Set up logging
-# Ensure the log directory exists
-log_file_path = 'FetchStockerNewsLog.txt'
-try:
-    if not os.path.exists(os.path.dirname(log_file_path)):
-        os.makedirs(os.path.dirname(log_file_path))
-except Exception:
-    # If we can't create directories, just use the file name directly
-    pass
-
-# Configure logging with both file and console handlers
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file_path, encoding='utf-8'),
-        logging.StreamHandler()  # Also print to console
-    ],
-    force=True  # Force reconfiguration in case logging was already configured
-)
-
-logger = logging.getLogger(__name__)
-logger.info("FetchStockerDataMCP模块已加载")
+# Remove old logging configuration
+log_global_info("FetchStockerDataMCP模块已加载")
 
 
 class StockerDataCollector():
@@ -102,11 +84,11 @@ class StockerDataCollector():
             }
         """
         try:
-            logger.info(f"开始获取公司'{company_name}'的股票数据，请求天数: {days}")
+            log_global_info(f"开始获取公司'{company_name}'的股票数据，请求天数: {days}")
             
             # 1. 根据公司名称查找股票代码
             symbol = self.__get_stock_symbol_by_company_name__(company_name)
-            logger.info(f"公司'{company_name}'对应的股票代码: {symbol}")
+            log_global_info(f"公司'{company_name}'对应的股票代码: {symbol}")
             
             # 2. 验证和清理股票代码
             clean_symbol = symbol.split('.')[0]  # 去除交易所后缀
@@ -121,21 +103,21 @@ class StockerDataCollector():
             else:
                 market = "SH"  # 默认
             
-            logger.info(f"股票代码: {clean_symbol}, 市场: {market}")
+            log_global_info(f"股票代码: {clean_symbol}, 市场: {market}")
             
             # 4. 获取数据
             end_date = datetime.now().strftime('%Y%m%d')
             start_date = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')  # 多获取一些数据以确保准确性
             
-            logger.info(f"请求数据日期范围: {start_date} 到 {end_date}")
+            log_global_info(f"请求数据日期范围: {start_date} 到 {end_date}")
             
             # 尝试多种数据获取方法
             df = None
             errors = []
             
-            # 方法1: 使用后复权数据
+            # 使用后复权数据
             try:
-                logger.info("尝试获取前复权数据")
+                log_global_info("尝试获取前复权数据")
                 df = ak.stock_zh_a_hist(
                     symbol=clean_symbol,
                     period="daily",
@@ -144,22 +126,22 @@ class StockerDataCollector():
                     adjust="qfq"  # 后复权
                 )
                 if not df.empty:
-                    logger.info("成功获取前复权数据")
+                    log_global_info("成功获取前复权数据")
             except Exception as e:
                 error_msg = f"前复权数据获取失败: {str(e)}"
                 errors.append(error_msg)
-                logger.warning(error_msg)
+                log_global_warning(error_msg)
             
             
-            # 如果所有方法都失败了
+            # 如果失败了
             if df is None or df.empty:
                 error_message = f"未获取到公司 {company_name}({symbol}) 的数据，请检查代码是否正确或日期范围是否有效"
                 if errors:
                     error_message += f" 错误详情: {'; '.join(errors)}"
-                logger.error(error_message)
+                log_global_error(error_message)
                 raise ValueError(error_message)
             
-            logger.info(f"成功获取到数据，原始数据条数: {len(df)}")
+            log_global_info(f"成功获取到数据，原始数据条数: {len(df)}")
             
             # 5. 数据预处理
             # 只取最近的指定天数数据
@@ -168,20 +150,20 @@ class StockerDataCollector():
             df.set_index('日期', inplace=True)
             df = df.sort_index()  # 确保日期升序排列
             
-            logger.info(f"处理后数据条数: {len(df)}")
+            log_global_info(f"处理后数据条数: {len(df)}")
             
             # 6. 计算技术指标（处理可能的NaN值）
             df['5日均线'] = df['收盘'].rolling(5, min_periods=1).mean().round(2)
             df['20日均线'] = df['收盘'].rolling(20, min_periods=1).mean().round(2)
             rsi_values = self.__calculate_rsi__(df['收盘'])
             
-            logger.info("技术指标计算完成")
+            log_global_info("技术指标计算完成")
             
             # 7. 构建结果
             # 检查DataFrame是否为空
             if df.empty:
                 error_msg = f"未获取到公司 {company_name}({symbol}) 的有效数据，请检查代码是否正确或日期范围是否有效"
-                logger.error(error_msg)
+                log_global_error(error_msg)
                 raise ValueError(error_msg)
             
             # 安全地提取技术指标
@@ -203,7 +185,7 @@ class StockerDataCollector():
                     if len(rsi_values) > 0 and not pd.isna(rsi_values.iloc[-1]):
                         rsi14 = round(rsi_values.iloc[-1], 2)
             except Exception as e:
-                logger.warning(f"提取技术指标时发生错误: {str(e)}")
+                log_global_warning(f"提取技术指标时发生错误: {str(e)}")
             
             result = {
                 "metadata": {
@@ -245,7 +227,7 @@ class StockerDataCollector():
                 }
             }
             
-            logger.info(f"成功返回公司'{company_name}'的股票数据，数据天数: {result['metadata']['data_days']}")
+            log_global_info(f"成功返回公司'{company_name}'的股票数据，数据天数: {result['metadata']['data_days']}")
             return result
     
         except Exception as e:
@@ -255,7 +237,7 @@ class StockerDataCollector():
                 "timestamp": datetime.now().isoformat(),
                 "solution": "请检查: 1.公司名称是否正确 2.是否为交易日 3.网络连接"
             }
-            logger.error(f"获取公司'{company_name}'股票数据时发生错误: {str(e)}")
+            log_global_error(f"获取公司'{company_name}'股票数据时发生错误: {str(e)}")
             return error_msg
     
     def __get_stock_symbol_by_company_name__(self, company_name: str) -> str:
@@ -268,10 +250,10 @@ class StockerDataCollector():
         Returns:
             股票代码
         """
-        logger.info(f"开始查找公司'{company_name}'的股票代码")
+        log_global_info(f"开始查找公司'{company_name}'的股票代码")
         try:
             # 获取股票列表
-            logger.info("获取股票列表数据")
+            log_global_info("获取股票列表数据")
             stock_list = ak.stock_info_a_code_name()
             # 在股票列表中查找完全匹配的公司名称
             exact_match = stock_list[stock_list['name'] == company_name]
@@ -279,7 +261,7 @@ class StockerDataCollector():
             if not exact_match.empty:
                 # 如果找到完全匹配项，返回第一个
                 symbol = exact_match.iloc[0]['code']
-                logger.info(f"找到完全匹配的股票代码: {symbol}")
+                log_global_info(f"找到完全匹配的股票代码: {symbol}")
                 # 确定市场
                 if symbol.startswith(('6', '9')):
                     market = "SH"
@@ -290,13 +272,13 @@ class StockerDataCollector():
                 return f"{symbol}.{'SS' if market == 'SH' else 'SZ'}"
             
             # 如果没有完全匹配，尝试模糊匹配
-            logger.info("未找到完全匹配项，尝试模糊匹配")
+            log_global_info("未找到完全匹配项，尝试模糊匹配")
             fuzzy_match = stock_list[stock_list['name'].str.contains(company_name, case=False, na=False)]
             
             if not fuzzy_match.empty:
                 # 如果找到模糊匹配项，返回第一个
                 symbol = fuzzy_match.iloc[0]['code']
-                logger.info(f"找到模糊匹配的股票代码: {symbol}")
+                log_global_info(f"找到模糊匹配的股票代码: {symbol}")
                 # 确定市场
                 if symbol.startswith(('6', '9')):
                     market = "SH"
@@ -308,7 +290,7 @@ class StockerDataCollector():
             
             # 如果还是没有找到，尝试通过搜索引擎获取
             try:
-                logger.info("尝试通过搜索引擎获取股票信息")
+                log_global_info("尝试通过搜索引擎获取股票信息")
                 # 获取更全面的股票信息
                 stock_sh = ak.stock_sh_a_spot_em()  # 上海A股
                 stock_sz = ak.stock_sz_a_spot_em()  # 深圳A股
@@ -317,35 +299,35 @@ class StockerDataCollector():
                 sh_match = stock_sh[stock_sh['名称'].str.contains(company_name, case=False, na=False)]
                 if not sh_match.empty:
                     symbol = sh_match.iloc[0]['代码']
-                    logger.info(f"在上海股票中找到匹配项: {symbol}")
+                    log_global_info(f"在上海股票中找到匹配项: {symbol}")
                     return f"{symbol}.SS"
                 
                 # 在深圳股票中查找
                 sz_match = stock_sz[stock_sz['名称'].str.contains(company_name, case=False, na=False)]
                 if not sz_match.empty:
                     symbol = sz_match.iloc[0]['代码']
-                    logger.info(f"在深圳股票中找到匹配项: {symbol}")
+                    log_global_info(f"在深圳股票中找到匹配项: {symbol}")
                     return f"{symbol}.SZ"
             except Exception as e:
-                logger.warning(f"搜索引擎方法失败: {str(e)}")
+                log_global_warning(f"搜索引擎方法失败: {str(e)}")
                 pass  # 忽略搜索引擎方法的错误，回退到抛出异常
             
             # 如果所有方法都失败了，抛出异常
             error_msg = f"未找到公司'{company_name}'对应的股票代码"
-            logger.error(error_msg)
+            log_global_error(error_msg)
             raise ValueError(error_msg)
             
         except Exception as e:
             error_msg = f"查询公司'{company_name}'的股票代码失败: {str(e)}"
-            logger.error(error_msg)
+            log_global_error(error_msg)
             raise ValueError(error_msg)
 
     def __calculate_rsi__(self, prices, window=14):
         """计算RSI指标"""
-        logger.debug(f"开始计算RSI指标，窗口大小: {window}，数据点数: {len(prices)}")
+        log_global_debug(f"开始计算RSI指标，窗口大小: {window}，数据点数: {len(prices)}")
         try:
             if len(prices) < window + 1:
-                logger.warning(f"数据点数不足，需要至少{window + 1}个点，实际只有{len(prices)}个点")
+                log_global_warning(f"数据点数不足，需要至少{window + 1}个点，实际只有{len(prices)}个点")
                 return pd.Series([None] * len(prices), index=prices.index)
             
             deltas = prices.diff()
@@ -372,10 +354,10 @@ class StockerDataCollector():
                 rs = up/down
                 rsi.iloc[i] = 100. - (100./(1.+rs))
                 
-            logger.debug(f"RSI指标计算完成，结果长度: {len(rsi)}")
+            log_global_debug(f"RSI指标计算完成，结果长度: {len(rsi)}")
             return rsi
         except Exception as e:
-            logger.error(f"RSI计算过程中发生错误: {str(e)}")
+            log_global_error(f"RSI计算过程中发生错误: {str(e)}")
             # 返回空的RSI序列
             return pd.Series([None] * len(prices), index=prices.index)
 
@@ -396,7 +378,7 @@ async def fetch_stock_data(
         Dictionary containing stock data including metadata, statistics, 
         technical indicators, and time series data
     """
-    logger.info(f"MCP工具被调用: fetch_stock_data(company_name='{company_name}', days={days})")
+    log_global_info(f"MCP工具被调用: fetch_stock_data(company_name='{company_name}', days={days})")
     collector = StockerDataCollector()
     # Run the synchronous function in a thread pool to avoid blocking
     loop = asyncio.get_event_loop()
@@ -404,7 +386,7 @@ async def fetch_stock_data(
         company_name=company_name,
         days=days
     ))
-    logger.info(f"MCP工具调用完成，返回结果类型: {type(result)}")
+    log_global_info(f"MCP工具调用完成，返回结果类型: {type(result)}")
     return result
 
 
